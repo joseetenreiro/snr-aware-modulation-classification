@@ -1,0 +1,15 @@
+﻿numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+jupyterlab
+ipykernel
+joblib
+pyyaml
+streamlit
+pytest
+tqdm
+plotly
+black
+ruff
