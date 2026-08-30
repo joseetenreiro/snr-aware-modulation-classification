@@ -85,15 +85,21 @@ def load_radioml():
 # Header
 # --------------------------------------------------
 
-st.title("📡 Automatic Modulation Classification")
+st.title(
+    "📡 Automatic Modulation Classification"
+)
+
+st.caption(
+    "RadioML 2016.10A · "
+    "Random Forest · "
+    "29 handcrafted signal features"
+)
 
 st.write(
     """
-    Classical machine learning demo for automatic modulation
-    classification using **RadioML 2016.10A**.
-
-    A Random Forest classifies raw I/Q windows using a
-    **29-feature signal representation**.
+    Explore how an Automatic Modulation Classification
+    system behaves as signal quality changes. Select a
+    modulation, SNR and I/Q example from the sidebar.
     """
 )
 
@@ -208,8 +214,13 @@ probabilities = result[
 
 
 # --------------------------------------------------
-# Main metrics
 # --------------------------------------------------
+# Main result
+# --------------------------------------------------
+
+st.subheader(
+    f"Classification result — {selected_snr} dB"
+)
 
 col1, col2, col3 = st.columns(3)
 
@@ -228,11 +239,8 @@ col3.metric(
     f"{confidence:.1%}",
 )
 
-
 if prediction == selected_modulation:
-    st.success(
-        "Correct classification"
-    )
+    st.success("Correct classification")
 else:
     st.warning(
         f"Misclassification: "
@@ -241,90 +249,111 @@ else:
 
 
 # --------------------------------------------------
-# I/Q temporal signal
+# Signal visualizations
 # --------------------------------------------------
 
 i_signal = sample[0]
 q_signal = sample[1]
 
-st.subheader("I/Q signal")
+st.subheader("Signal visualization")
 
-fig, ax = plt.subplots(
-    figsize=(10, 4)
-)
-
-ax.plot(
-    i_signal,
-    label="I",
-)
-
-ax.plot(
-    q_signal,
-    label="Q",
-)
-
-ax.set_xlabel("Sample")
-ax.set_ylabel("Amplitude")
-ax.set_title(
-    f"{selected_modulation} at {selected_snr} dB"
-)
-
-ax.grid(alpha=0.25)
-ax.legend()
-
-fig.tight_layout()
-
-st.pyplot(fig)
-
-plt.close(fig)
+signal_col, iq_col = st.columns(2)
 
 
-# --------------------------------------------------
+# Temporal I/Q signal
+with signal_col:
+
+    st.markdown("#### Temporal I/Q")
+
+    fig, ax = plt.subplots(
+        figsize=(7, 4)
+    )
+
+    ax.plot(
+        i_signal,
+        label="I",
+    )
+
+    ax.plot(
+        q_signal,
+        label="Q",
+    )
+
+    ax.set_xlabel("Sample")
+    ax.set_ylabel("Amplitude")
+
+    ax.set_title(
+        f"{selected_modulation} — {selected_snr} dB"
+    )
+
+    ax.grid(alpha=0.25)
+    ax.legend()
+
+    fig.tight_layout()
+
+    st.pyplot(
+        fig,
+        use_container_width=True,
+    )
+
+    plt.close(fig)
+
+
 # I/Q plane
-# --------------------------------------------------
+with iq_col:
 
-st.subheader("I/Q plane")
+    st.markdown("#### I/Q plane")
 
-fig, ax = plt.subplots(
-    figsize=(6, 6)
-)
+    fig, ax = plt.subplots(
+        figsize=(5, 4)
+    )
 
-ax.scatter(
-    i_signal,
-    q_signal,
-    alpha=0.7,
-)
+    ax.scatter(
+        i_signal,
+        q_signal,
+        alpha=0.7,
+        s=25,
+    )
 
-ax.axhline(
-    0,
-    linewidth=0.8,
-)
+    ax.axhline(
+        0,
+        linewidth=0.8,
+    )
 
-ax.axvline(
-    0,
-    linewidth=0.8,
-)
+    ax.axvline(
+        0,
+        linewidth=0.8,
+    )
 
-ax.set_xlabel("In-phase (I)")
-ax.set_ylabel("Quadrature (Q)")
-ax.set_title(
-    "Observed I/Q samples"
-)
+    ax.set_xlabel("In-phase (I)")
+    ax.set_ylabel("Quadrature (Q)")
 
-ax.grid(alpha=0.25)
+    ax.set_title(
+        "Observed I/Q samples"
+    )
 
-fig.tight_layout()
+    ax.grid(alpha=0.25)
 
-st.pyplot(fig)
+    ax.set_aspect(
+        "equal",
+        adjustable="box",
+    )
 
-plt.close(fig)
+    fig.tight_layout()
+
+    st.pyplot(
+        fig,
+        use_container_width=True,
+    )
+
+    plt.close(fig)
 
 
 # --------------------------------------------------
 # Probabilities
 # --------------------------------------------------
 
-st.subheader("Class probabilities")
+st.subheader("Model output")
 
 probability_df = pd.DataFrame(
     {
@@ -336,35 +365,99 @@ probability_df = pd.DataFrame(
     }
 )
 
-probability_df = probability_df.sort_values(
-    "Probability",
-    ascending=False,
-)
-
-st.bar_chart(
-    probability_df.set_index(
-        "Modulation"
+probability_df = (
+    probability_df
+    .sort_values(
+        "Probability",
+        ascending=False,
     )
+    .reset_index(drop=True)
 )
+
+
+prob_col, table_col = st.columns(
+    [1.5, 1]
+)
+
+
+# Probability chart
+with prob_col:
+
+    st.markdown(
+        "#### Class probabilities"
+    )
+
+    probability_chart_df = (
+        probability_df
+        .set_index("Modulation")
+    )
+
+    st.bar_chart(
+        probability_chart_df,
+        height=350,
+    )
+
+
+# Probability table
+with table_col:
+
+    st.markdown(
+        "#### Prediction ranking"
+    )
+
+    display_df = (
+        probability_df.copy()
+    )
+
+    display_df[
+        "Probability"
+    ] = display_df[
+        "Probability"
+    ].map(
+        lambda value:
+            f"{value:.2%}"
+    )
+
+    st.dataframe(
+        display_df,
+        hide_index=True,
+        use_container_width=True,
+        height=350,
+    )
 
 
 # --------------------------------------------------
-# Detailed prediction table
+# Interpretation
 # --------------------------------------------------
 
-probability_df[
-    "Probability"
-] = probability_df[
-    "Probability"
-].map(
-    lambda value: f"{value:.2%}"
-)
+with st.expander(
+    "How to interpret this prediction"
+):
 
-st.dataframe(
-    probability_df,
-    hide_index=True,
-    use_container_width=True,
-)
+    st.write(
+        f"""
+        The classifier predicts **{prediction}**
+        with a confidence of **{confidence:.1%}**.
+
+        The selected example has an SNR of
+        **{selected_snr} dB**.
+
+        SNR is used here only to select and analyze
+        the RadioML sample. It is **not provided as
+        an input feature to the classifier**.
+        """
+    )
+
+    if selected_snr < 0:
+
+        st.info(
+            """
+            At negative SNR, noise increasingly
+            dominates the received I/Q signal.
+            Classification uncertainty is therefore
+            expected to increase.
+            """
+        )
 
 
 # --------------------------------------------------
@@ -375,33 +468,32 @@ with st.expander(
     "Model information"
 ):
 
-    st.write(
+    model_col1, model_col2 = st.columns(2)
+
+    model_col1.write(
         "**Classifier:** Random Forest"
     )
 
-    st.write(
-        f"**Number of features:** "
+    model_col1.write(
+        f"**Features:** "
         f"{metadata['n_features']}"
     )
 
-    st.write(
+    model_col1.write(
         "**Feature set:** "
         f"`{metadata['feature_set']}`"
     )
 
-    st.write(
+    model_col2.write(
         "**Held-out test accuracy:** "
         f"{metadata['final_test']['accuracy']:.2%}"
     )
 
-    st.write(
+    model_col2.write(
         "**Held-out test Macro-F1:** "
         f"{metadata['final_test']['macro_f1']:.2%}"
     )
 
-    st.write(
-        """
-        SNR is shown for analysis and sample selection,
-        but it is **not used as an input feature by the classifier**.
-        """
+    model_col2.write(
+        "**Accuracy at 18 dB:** 90.30%"
     )
