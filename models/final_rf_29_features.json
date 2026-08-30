@@ -1,0 +1,61 @@
+{
+    "model_name": "RandomForestClassifier",
+    "dataset": "RadioML 2016.10A",
+    "feature_set": "full_final",
+    "n_features": 29,
+    "feature_columns": [
+        "i_mean",
+        "i_std",
+        "q_mean",
+        "q_std",
+        "magnitude_std",
+        "magnitude_max",
+        "power_mean",
+        "rms",
+        "papr",
+        "phase_diff_mean",
+        "phase_diff_std",
+        "i_skew",
+        "i_kurtosis",
+        "q_skew",
+        "q_kurtosis",
+        "magnitude_skew",
+        "magnitude_kurtosis",
+        "phase_diff_skew",
+        "phase_diff_kurtosis",
+        "autocorr_lag1",
+        "autocorr_lag2",
+        "autocorr_lag4",
+        "spectral_centroid",
+        "spectral_bandwidth",
+        "spectral_entropy",
+        "spectral_flatness",
+        "spectral_peak_frequency",
+        "spectral_peak_ratio",
+        "circular_moment_4"
+    ],
+    "hyperparameters": {
+        "n_estimators": 200,
+        "max_depth": 20,
+        "min_samples_leaf": 2,
+        "random_state": 42,
+        "n_jobs": -1
+    },
+    "classes": [
+        "8PSK",
+        "AM-DSB",
+        "AM-SSB",
+        "BPSK",
+        "CPFSK",
+        "GFSK",
+        "PAM4",
+        "QAM16",
+        "QAM64",
+        "QPSK",
+        "WBFM"
+    ],
+    "final_test": {
+        "accuracy": 0.5561515151515152,
+        "macro_f1": 0.5785616898183638
+    }
+}
