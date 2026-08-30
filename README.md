@@ -8,6 +8,26 @@ The final system uses a **Random Forest classifier with 29 handcrafted signal fe
 
 ---
 
+## 🚀 Live Demo
+
+Try the interactive Automatic Modulation Classification demo:
+
+### [Open the Streamlit Demo](https://snr-aware-modulation-classification-5edwynqwb64ftphsgp3gxt.streamlit.app/)
+
+The demo allows you to:
+
+- select one of the 11 RadioML modulation classes;
+- choose representative SNR conditions;
+- inspect raw I/Q signals;
+- visualize the observed I/Q plane;
+- obtain the predicted modulation;
+- inspect model confidence;
+- compare probabilities across all 11 classes.
+
+The public application uses a lightweight RadioML subset for demonstration, while predictions are produced by the **same frozen Random Forest model used for the final evaluation**.
+
+---
+
 ## Key results
 
 The final model was frozen before opening the independent held-out test set.
@@ -52,7 +72,7 @@ At **-20 dB**, test accuracy is approximately **9.27%**, very close to the rando
 
 At **0 dB**, accuracy rises to approximately **74.67%**, while at **18 dB** it reaches **90.30%**.
 
-The held-out test curve also closely follows the validation curve, providing evidence that the observed SNR-dependent behaviour generalizes to unseen signals.
+The held-out test curve closely follows the validation curve across the full SNR range, providing evidence that the observed SNR-dependent behaviour generalizes to unseen signals.
 
 ---
 
@@ -81,7 +101,7 @@ It contains:
 - **20 SNR levels**, from -20 dB to +18 dB in 2 dB steps
 - **1,000 examples** for every modulation/SNR combination
 - **128 complex samples** per signal
-- Input representation: `(2, 128)` corresponding to the I and Q components
+- Input representation: `(2, 128)`, corresponding to the I and Q components
 
 ### Modulation classes
 
@@ -157,11 +177,17 @@ Frozen Random Forest
        |
        v
 Independent held-out test
+       |
+       v
+Reusable inference pipeline
+       |
+       v
+Interactive Streamlit demo
 ```
 
 SNR is used for **stratification, evaluation and error analysis**, but it is **not provided to the Random Forest as an input feature**.
 
-This allows the classifier to operate directly from the received I/Q samples without requiring prior knowledge of the true SNR.
+The classifier therefore operates directly from signal-derived features without requiring prior knowledge of the true SNR.
 
 ---
 
@@ -199,28 +225,24 @@ circular_moment_4 = abs(
     )
 )
 ```
+
+Normalizing the complex samples suppresses most amplitude information and emphasizes angular structure.
+
+The fourth power is particularly useful for detecting the four-fold rotational symmetry associated with QPSK.
+
 ### Physical separation of QPSK and 8PSK
 
-The effect of the new feature can also be observed directly in its
-distribution for QPSK and 8PSK signals.
+The effect of the new feature can be observed directly in its distribution for QPSK and 8PSK signals.
 
-The following figure shows `circular_moment_4` on validation signals at
-**18 dB SNR**:
+The following figure shows `circular_moment_4` on validation signals at **18 dB SNR**:
 
 ![QPSK vs 8PSK circular moment](reports/figures/circular_moment_qpsk_vs_8psk_18db.png)
 
-QPSK exhibits stronger fourth-order angular coherence because its
-four-fold rotational structure is reinforced when the normalized complex
-signal is raised to the fourth power.
+QPSK exhibits stronger fourth-order angular coherence because its four-fold rotational structure is reinforced when the normalized complex signal is raised to the fourth power.
 
-For 8PSK, the eight possible phase states do not align in the same way,
-producing greater cancellation in the fourth-order circular mean.
+For 8PSK, the eight possible phase states do not align in the same way, producing greater cancellation in the fourth-order circular mean.
 
-This provides the classifier with modulation-order information that was
-poorly represented by the original handcrafted feature set.
-Normalizing the complex samples removes most amplitude information and emphasizes angular structure.
-
-The fourth power is particularly useful for detecting the rotational symmetry associated with QPSK.
+This provides the classifier with modulation-order information that was poorly represented by the original handcrafted feature set.
 
 The final representation therefore contains:
 
@@ -232,11 +254,6 @@ The final representation therefore contains:
 29 final features
 ```
 
-On validation data, this modification increased Macro-F1 from approximately:
-
-```text
-0.5493 -> 0.5762
-```
 ### Impact on validation performance
 
 Adding only `circular_moment_4` improved both global validation metrics:
@@ -253,10 +270,11 @@ Accuracy:
 Macro-F1:
 54.93% -> 57.62%
 +2.69 percentage points
-while adding only one feature to the model.
+```
+
+This improvement was obtained by adding only **one physically motivated feature** to the original representation.
 
 ---
-
 
 ## Error analysis
 
@@ -266,15 +284,13 @@ A major part of the project focused on understanding **where the classifier fail
 
 At high SNR, most modulation classes become clearly separable.
 
-The normalized confusion matrix below shows the behaviour of the final
-classifier on the independent held-out test set at **18 dB**.
+The normalized confusion matrix below shows the behaviour of the final classifier on the independent held-out test set at **18 dB**:
 
 ![Normalized confusion matrix at 18 dB](reports/figures/confusion_matrix_18db.png)
 
 The model achieves **90.30% accuracy at 18 dB**.
 
-Several modulation families are recognized almost perfectly, including
-BPSK, CPFSK, GFSK, PAM4, QPSK and QAM64.
+Several modulation families are recognized almost perfectly, including BPSK, CPFSK, GFSK, PAM4, QPSK and QAM64.
 
 The two main remaining error patterns are:
 
@@ -282,6 +298,7 @@ The two main remaining error patterns are:
 - WBFM being classified as AM-DSB.
 
 Importantly, the previous QPSK/8PSK confusion is now substantially reduced.
+
 ### Extreme low-SNR regime
 
 At very low SNR, AWGN dominates the observations and the handcrafted representations of different modulation classes become increasingly similar.
@@ -293,8 +310,6 @@ This does not mean that noisy signals physically become AM-SSB.
 Instead, modulation separability collapses in the available feature space and the learned Random Forest decision boundaries preferentially map many low-information observations to that class.
 
 At -20 dB, performance is therefore close to random chance.
-
----
 
 ### QPSK vs 8PSK
 
@@ -313,8 +328,6 @@ QPSK recall ≈ 0.97
 
 The previous mutual confusion between both PSK orders is largely removed.
 
----
-
 ### QAM16 vs QAM64
 
 This remains one of the main residual high-SNR classification errors.
@@ -330,19 +343,17 @@ A substantial fraction of QAM16 signals are still classified as QAM64.
 
 Several amplitude, radial-distribution and cumulant-based features were investigated, but they did not improve end-to-end classification performance and were therefore rejected from the final representation.
 
----
-
 ### WBFM vs AM-DSB
 
 The other major residual ambiguity is between the analog modulations **WBFM and AM-DSB**.
 
-At 18 dB, approximately:
+At 18 dB:
 
 ```text
 WBFM recall ≈ 0.60
 ```
 
-with a significant fraction of WBFM signals classified as AM-DSB.
+A significant fraction of WBFM signals are classified as AM-DSB.
 
 Instantaneous-frequency and spectral-sideband features were investigated during development. They provided only a small global improvement and were not retained in the final model.
 
@@ -396,7 +407,7 @@ The additional complexity was therefore rejected.
 
 This led to an important design decision:
 
-> prefer a simpler global model when additional architectural complexity does not provide a meaningful measurable benefit.
+> Prefer a simpler global model when additional architectural complexity does not provide a meaningful measurable benefit.
 
 ---
 
@@ -508,6 +519,62 @@ print(result["probabilities"])
 
 The model metadata stores the exact feature schema required at inference time.
 
+A standalone smoke test is also available at:
+
+```text
+scripts/smoke_test_inference.py
+```
+
+---
+
+## Interactive demo
+
+The Streamlit application is implemented in:
+
+```text
+app/app.py
+```
+
+The public version uses a lightweight subset of RadioML containing:
+
+```text
+11 modulation classes
+4 representative SNR levels
+10 examples per modulation/SNR pair
+440 I/Q examples in total
+```
+
+The included SNR levels are:
+
+```text
+-10 dB
+0 dB
+10 dB
+18 dB
+```
+
+This allows the application to demonstrate the transition from strongly noise-dominated signals to high-SNR classification without loading the complete RadioML dataset.
+
+The demo subset occupies approximately **0.4 MB**.
+
+The final Random Forest is downloaded automatically from the GitHub `v1.0.0` Release when required.
+
+### [Launch the live application](https://snr-aware-modulation-classification-5edwynqwb64ftphsgp3gxt.streamlit.app/)
+
+---
+
+## Model artifact
+
+The serialized Random Forest is not committed directly to the Git repository because of its size.
+
+The deployment artifact is distributed through the GitHub release:
+
+### [AMC Random Forest v1.0.0](https://github.com/joseetenreiro/snr-aware-modulation-classification/releases/tag/v1.0.0)
+
+The compressed model occupies approximately **83.67 MB**.
+
+The compressed artifact was verified to produce predictions identical to the original frozen model.
+
 ---
 
 ## Repository structure
@@ -516,26 +583,26 @@ The model metadata stores the exact feature schema required at inference time.
 snr-aware-modulation-classification/
 |
 ├── app/
-|   └── Interactive demonstration
+|   └── app.py
 |
 ├── configs/
-|   └── Project configuration
 |
 ├── data/
-|   ├── raw/
-|   └── processed/
-|       Local datasets excluded from Git
+|   ├── demo/
+|   |   └── radioml_demo_samples.npz
+|   ├── processed/
+|   |   └── Local generated datasets excluded from Git
+|   └── raw/
+|       └── RadioML source data excluded from Git
 |
 ├── models/
-|   ├── final_rf_29_features.json
-|   └── final_rf_29_features.joblib
-|       Large model binary excluded from Git
+|   └── final_rf_29_features.json
 |
 ├── notebooks/
-|   ├── 00_environment_setup.ipynb
+|   ├── 00_environment_check.ipynb
 |   ├── 01_data_loading.ipynb
 |   ├── 02_exploratory_analysis.ipynb
-|   ├── 03_baseline_models.ipynb
+|   ├── 03_classical_baselines.ipynb
 |   ├── 04_model_tuning.ipynb
 |   ├── 05_snr_evaluation.ipynb
 |   ├── 06_error_analysis.ipynb
@@ -544,13 +611,19 @@ snr-aware-modulation-classification/
 |
 ├── reports/
 |   └── figures/
-|       └── accuracy_vs_snr_validation_test.png
+|       ├── accuracy_vs_snr_validation_test.png
+|       ├── circular_moment_qpsk_vs_8psk_18db.png
+|       ├── confusion_matrix_18db.png
+|       └── feature_engineering_improvement.png
 |
 ├── scripts/
-|   └── Reproducible execution scripts
+|   ├── compress_model.py
+|   ├── create_demo_dataset.py
+|   └── smoke_test_inference.py
 |
 ├── src/
 |   └── rfml/
+|       ├── __init__.py
 |       ├── data.py
 |       ├── features.py
 |       ├── inference.py
@@ -571,7 +644,7 @@ snr-aware-modulation-classification/
 Clone the repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/joseetenreiro/snr-aware-modulation-classification.git
 cd snr-aware-modulation-classification
 ```
 
@@ -601,28 +674,47 @@ pip install -r requirements-lock.txt
 
 ---
 
+## Run the demo locally
+
+The public demo can be started locally with:
+
+```bash
+streamlit run app/app.py
+```
+
+If the trained model is not available locally, the application automatically downloads the frozen compressed model from the GitHub `v1.0.0` Release.
+
+---
+
 ## Reproducibility
 
-The raw RadioML dataset and generated feature datasets are intentionally excluded from Git because of their size.
+The complete RadioML dataset and generated feature datasets are intentionally excluded from Git because of their size.
 
-The serialized final Random Forest is also excluded from the repository because the compressed model is approximately **95 MB**.
+The repository versions the main components required to understand and reproduce the methodology:
 
-The repository versions the components required to document and reproduce the methodology:
+- signal loading utilities;
+- train/validation/test split logic;
+- handcrafted feature extraction;
+- exact final feature schema;
+- experimental notebooks;
+- SNR-dependent evaluation;
+- error analysis;
+- physical feature engineering;
+- final held-out test evaluation;
+- reusable inference pipeline;
+- model metadata;
+- reporting figures;
+- public demo subset;
+- deployment scripts;
+- Streamlit application.
 
-- feature extraction code
-- exact final feature schema
-- train/validation/test methodology
-- experimental notebooks
-- final evaluation notebook
-- inference pipeline
-- model metadata
-- result figures
-
-The final model metadata can be found at:
+The final model metadata is stored at:
 
 ```text
 models/final_rf_29_features.json
 ```
+
+The frozen model itself is distributed separately through the GitHub Release.
 
 ---
 
@@ -630,7 +722,7 @@ models/final_rf_29_features.json
 
 This project demonstrates that Automatic Modulation Classification performance must be interpreted in the context of signal quality.
 
-The final classifier achieves **55.62% accuracy across the complete -20 to +18 dB benchmark**, but this number includes extremely noisy observations where modulation information is almost completely buried by noise.
+The final classifier achieves **55.62% accuracy across the complete -20 to +18 dB benchmark**, but this global value includes extreme noise conditions where modulation information is almost completely buried by AWGN.
 
 For **SNR >= 0 dB**, average test accuracy rises to approximately **85.35%**, and the model exceeds **90% accuracy at 18 dB**.
 
@@ -645,7 +737,7 @@ The most successful improvement was not a larger model or a more complex archite
 
 This increased global Macro-F1 while substantially reducing the targeted QPSK/8PSK error.
 
-The final result is therefore a relatively compact and interpretable classical machine learning pipeline whose behaviour has been analyzed across the complete SNR range.
+The final result is a compact and interpretable classical machine learning pipeline whose behaviour has been analyzed across the complete SNR range and deployed as an interactive public application.
 
 ---
 
@@ -653,11 +745,14 @@ The final result is therefore a relatively compact and interpretable classical m
 
 **Machine learning experimentation: complete**
 
-The final feature set, classifier configuration and held-out test evaluation are frozen.
+**Held-out test evaluation: complete**
 
-Current work focuses on:
+**Inference pipeline: complete**
 
-- result visualization
-- repository documentation
-- reproducible inference
-- interactive demonstration
+**Public Streamlit deployment: complete**
+
+The final feature representation, Random Forest configuration and held-out test results are frozen.
+
+### Live application
+
+[🚀 Automatic Modulation Classification Demo](https://snr-aware-modulation-classification-5edwynqwb64ftphsgp3gxt.streamlit.app/)
