@@ -1,5 +1,5 @@
 from pathlib import Path
-import pickle
+from urllib.request import urlretrieve
 import sys
 
 import matplotlib.pyplot as plt
@@ -8,11 +8,12 @@ import pandas as pd
 import streamlit as st
 
 
-# --------------------------------------------------
+# ==================================================
 # Project paths
-# --------------------------------------------------
+# ==================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 SRC_DIR = PROJECT_ROOT / "src"
 
 if str(SRC_DIR) not in sys.path:
@@ -28,7 +29,14 @@ from rfml.inference import (
 MODEL_PATH = (
     PROJECT_ROOT
     / "models"
-    / "final_rf_29_features.joblib"
+    / "final_rf_29_features_compressed.joblib"
+)
+
+MODEL_URL = (
+    "https://github.com/joseetenreiro/"
+    "snr-aware-modulation-classification/"
+    "releases/download/v1.0.0/"
+    "final_rf_29_features_compressed.joblib"
 )
 
 METADATA_PATH = (
@@ -37,18 +45,17 @@ METADATA_PATH = (
     / "final_rf_29_features.json"
 )
 
-RAW_DATA_PATH = (
+DEMO_DATA_PATH = (
     PROJECT_ROOT
     / "data"
-    / "raw"
-    / "RML2016.10a"
-    / "RML2016.10a_dict.pkl"
+    / "demo"
+    / "radioml_demo_samples.npz"
 )
 
 
-# --------------------------------------------------
+# ==================================================
 # Streamlit configuration
-# --------------------------------------------------
+# ==================================================
 
 st.set_page_config(
     page_title="Automatic Modulation Classification",
@@ -57,33 +64,95 @@ st.set_page_config(
 )
 
 
-# --------------------------------------------------
-# Cached loaders
-# --------------------------------------------------
+# ==================================================
+# Model download
+# ==================================================
+
+def ensure_model_exists():
+    """
+    Download the frozen Random Forest model from the
+    GitHub Release when it is not available locally.
+    """
+
+    if MODEL_PATH.exists():
+        return
+
+    MODEL_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    temporary_path = (
+        MODEL_PATH.parent
+        / f"{MODEL_PATH.name}.part"
+    )
+
+    try:
+        with st.spinner(
+            "Downloading trained model "
+            "(~84 MB, first launch only)..."
+        ):
+            urlretrieve(
+                MODEL_URL,
+                temporary_path,
+            )
+
+        temporary_path.replace(
+            MODEL_PATH
+        )
+
+    except Exception as exc:
+        if temporary_path.exists():
+            temporary_path.unlink()
+
+        st.error(
+            "The trained model could not be downloaded."
+        )
+
+        st.exception(exc)
+        st.stop()
+
+
+# ==================================================
+# Cached resource loaders
+# ==================================================
 
 @st.cache_resource
 def load_classifier():
+    """
+    Load the frozen classifier and its metadata.
+    """
+
+    ensure_model_exists()
+
     return load_model_and_metadata(
         MODEL_PATH,
         METADATA_PATH,
     )
 
 
-@st.cache_resource
-def load_radioml():
-    with open(
-        RAW_DATA_PATH,
-        "rb",
-    ) as f:
-        return pickle.load(
-            f,
-            encoding="latin1",
-        )
+@st.cache_data
+def load_demo_dataset():
+    """
+    Load the lightweight RadioML demonstration subset.
+    """
+
+    demo = np.load(
+        DEMO_DATA_PATH,
+        allow_pickle=True,
+    )
+
+    return {
+        "samples": demo["samples"],
+        "modulation": demo["modulation"],
+        "snr": demo["snr"],
+        "original_index": demo["original_index"],
+    }
 
 
-# --------------------------------------------------
+# ==================================================
 # Header
-# --------------------------------------------------
+# ==================================================
 
 st.title(
     "📡 Automatic Modulation Classification"
@@ -98,74 +167,77 @@ st.caption(
 st.write(
     """
     Explore how an Automatic Modulation Classification
-    system behaves as signal quality changes. Select a
-    modulation, SNR and I/Q example from the sidebar.
+    system behaves as signal quality changes.
+
+    Select a modulation, SNR and I/Q example from the
+    sidebar and inspect the model prediction, confidence,
+    signal representation and class probabilities.
     """
 )
 
 
-# --------------------------------------------------
-# Check local files
-# --------------------------------------------------
-
-if not MODEL_PATH.exists():
-    st.error(
-        f"Model not found: {MODEL_PATH}"
-    )
-    st.stop()
+# ==================================================
+# Required repository files
+# ==================================================
 
 if not METADATA_PATH.exists():
     st.error(
-        f"Metadata not found: {METADATA_PATH}"
+        f"Model metadata not found:\n\n{METADATA_PATH}"
     )
     st.stop()
 
-if not RAW_DATA_PATH.exists():
+
+if not DEMO_DATA_PATH.exists():
     st.error(
-        f"RadioML dataset not found: {RAW_DATA_PATH}"
+        f"Demo dataset not found:\n\n{DEMO_DATA_PATH}"
     )
     st.stop()
 
 
-# --------------------------------------------------
+# ==================================================
 # Load resources
-# --------------------------------------------------
+# ==================================================
 
 with st.spinner("Loading classifier..."):
     model, metadata = load_classifier()
 
-with st.spinner("Loading RadioML dataset..."):
-    radioml = load_radioml()
+
+demo = load_demo_dataset()
 
 
-# --------------------------------------------------
-# Dataset controls
-# --------------------------------------------------
+# ==================================================
+# Sidebar — signal selection
+# ==================================================
 
-st.sidebar.header("Signal selection")
-
-modulations = sorted(
-    {
-        modulation
-        for modulation, snr in radioml.keys()
-    }
+st.sidebar.header(
+    "Signal selection"
 )
 
+
+modulations = sorted(
+    np.unique(
+        demo["modulation"]
+    ).tolist()
+)
+
+
 snr_values = sorted(
-    {
-        snr
-        for modulation, snr in radioml.keys()
-    }
+    np.unique(
+        demo["snr"]
+    ).tolist()
 )
 
 
 selected_modulation = st.sidebar.selectbox(
     "True modulation",
     modulations,
-    index=modulations.index("QPSK")
-    if "QPSK" in modulations
-    else 0,
+    index=(
+        modulations.index("QPSK")
+        if "QPSK" in modulations
+        else 0
+    ),
 )
+
 
 selected_snr = st.sidebar.select_slider(
     "SNR (dB)",
@@ -173,32 +245,68 @@ selected_snr = st.sidebar.select_slider(
     value=18,
 )
 
-signals = radioml[
-    (
-        selected_modulation,
-        selected_snr,
-    )
-]
 
-sample_index = st.sidebar.slider(
+mask = (
+    (
+        demo["modulation"]
+        == selected_modulation
+    )
+    &
+    (
+        demo["snr"]
+        == selected_snr
+    )
+)
+
+
+available_samples = (
+    demo["samples"][mask]
+)
+
+available_indices = (
+    demo["original_index"][mask]
+)
+
+
+sample_position = st.sidebar.slider(
     "Example index",
     min_value=0,
-    max_value=len(signals) - 1,
+    max_value=len(available_samples) - 1,
     value=0,
 )
 
-sample = signals[sample_index]
+
+sample = available_samples[
+    sample_position
+]
+
+original_index = available_indices[
+    sample_position
+]
 
 
-# --------------------------------------------------
+st.sidebar.caption(
+    f"Original RadioML index: "
+    f"{int(original_index)}"
+)
+
+st.sidebar.caption(
+    "Public demo subset: "
+    f"{len(modulations)} modulations · "
+    f"{len(snr_values)} SNR levels"
+)
+
+
+# ==================================================
 # Prediction
-# --------------------------------------------------
+# ==================================================
 
 result = predict_modulation(
     sample,
     model,
     metadata,
 )
+
 
 prediction = result[
     "predicted_modulation"
@@ -213,34 +321,41 @@ probabilities = result[
 ]
 
 
-# --------------------------------------------------
-# --------------------------------------------------
-# Main result
-# --------------------------------------------------
+# ==================================================
+# Main classification result
+# ==================================================
 
 st.subheader(
     f"Classification result — {selected_snr} dB"
 )
 
+
 col1, col2, col3 = st.columns(3)
+
 
 col1.metric(
     "True modulation",
     selected_modulation,
 )
 
+
 col2.metric(
     "Predicted modulation",
     prediction,
 )
+
 
 col3.metric(
     "Confidence",
     f"{confidence:.1%}",
 )
 
+
 if prediction == selected_modulation:
-    st.success("Correct classification")
+    st.success(
+        "Correct classification"
+    )
+
 else:
     st.warning(
         f"Misclassification: "
@@ -248,22 +363,31 @@ else:
     )
 
 
-# --------------------------------------------------
-# Signal visualizations
-# --------------------------------------------------
+# ==================================================
+# Signal visualization
+# ==================================================
 
 i_signal = sample[0]
 q_signal = sample[1]
 
-st.subheader("Signal visualization")
+
+st.subheader(
+    "Signal visualization"
+)
+
 
 signal_col, iq_col = st.columns(2)
 
 
+# --------------------------------------------------
 # Temporal I/Q signal
+# --------------------------------------------------
+
 with signal_col:
 
-    st.markdown("#### Temporal I/Q")
+    st.markdown(
+        "#### Temporal I/Q"
+    )
 
     fig, ax = plt.subplots(
         figsize=(7, 4)
@@ -279,14 +403,23 @@ with signal_col:
         label="Q",
     )
 
-    ax.set_xlabel("Sample")
-    ax.set_ylabel("Amplitude")
-
-    ax.set_title(
-        f"{selected_modulation} — {selected_snr} dB"
+    ax.set_xlabel(
+        "Sample"
     )
 
-    ax.grid(alpha=0.25)
+    ax.set_ylabel(
+        "Amplitude"
+    )
+
+    ax.set_title(
+        f"{selected_modulation} — "
+        f"{selected_snr} dB"
+    )
+
+    ax.grid(
+        alpha=0.25
+    )
+
     ax.legend()
 
     fig.tight_layout()
@@ -299,10 +432,15 @@ with signal_col:
     plt.close(fig)
 
 
+# --------------------------------------------------
 # I/Q plane
+# --------------------------------------------------
+
 with iq_col:
 
-    st.markdown("#### I/Q plane")
+    st.markdown(
+        "#### I/Q plane"
+    )
 
     fig, ax = plt.subplots(
         figsize=(5, 4)
@@ -325,14 +463,21 @@ with iq_col:
         linewidth=0.8,
     )
 
-    ax.set_xlabel("In-phase (I)")
-    ax.set_ylabel("Quadrature (Q)")
+    ax.set_xlabel(
+        "In-phase (I)"
+    )
+
+    ax.set_ylabel(
+        "Quadrature (Q)"
+    )
 
     ax.set_title(
         "Observed I/Q samples"
     )
 
-    ax.grid(alpha=0.25)
+    ax.grid(
+        alpha=0.25
+    )
 
     ax.set_aspect(
         "equal",
@@ -349,21 +494,29 @@ with iq_col:
     plt.close(fig)
 
 
-# --------------------------------------------------
-# Probabilities
-# --------------------------------------------------
+# ==================================================
+# Model output
+# ==================================================
 
-st.subheader("Model output")
+st.subheader(
+    "Model output"
+)
+
 
 probability_df = pd.DataFrame(
     {
         "Modulation":
-            list(probabilities.keys()),
+            list(
+                probabilities.keys()
+            ),
 
         "Probability":
-            list(probabilities.values()),
+            list(
+                probabilities.values()
+            ),
     }
 )
+
 
 probability_df = (
     probability_df
@@ -371,7 +524,9 @@ probability_df = (
         "Probability",
         ascending=False,
     )
-    .reset_index(drop=True)
+    .reset_index(
+        drop=True
+    )
 )
 
 
@@ -380,7 +535,10 @@ prob_col, table_col = st.columns(
 )
 
 
+# --------------------------------------------------
 # Probability chart
+# --------------------------------------------------
+
 with prob_col:
 
     st.markdown(
@@ -389,7 +547,9 @@ with prob_col:
 
     probability_chart_df = (
         probability_df
-        .set_index("Modulation")
+        .set_index(
+            "Modulation"
+        )
     )
 
     st.bar_chart(
@@ -398,7 +558,10 @@ with prob_col:
     )
 
 
-# Probability table
+# --------------------------------------------------
+# Prediction ranking
+# --------------------------------------------------
+
 with table_col:
 
     st.markdown(
@@ -426,9 +589,9 @@ with table_col:
     )
 
 
-# --------------------------------------------------
-# Interpretation
-# --------------------------------------------------
+# ==================================================
+# Prediction interpretation
+# ==================================================
 
 with st.expander(
     "How to interpret this prediction"
@@ -439,36 +602,42 @@ with st.expander(
         The classifier predicts **{prediction}**
         with a confidence of **{confidence:.1%}**.
 
-        The selected example has an SNR of
+        The selected signal has an SNR of
         **{selected_snr} dB**.
 
-        SNR is used here only to select and analyze
-        the RadioML sample. It is **not provided as
-        an input feature to the classifier**.
+        SNR is used only to select and analyze the
+        RadioML example. It is **not provided as an
+        input feature to the Random Forest**.
         """
     )
+
 
     if selected_snr < 0:
 
         st.info(
             """
-            At negative SNR, noise increasingly
-            dominates the received I/Q signal.
-            Classification uncertainty is therefore
-            expected to increase.
+            At negative SNR, additive noise increasingly
+            dominates the observed I/Q samples.
+
+            Modulation-specific structure becomes less
+            separable, so classification uncertainty and
+            error rates are expected to increase.
             """
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # Model information
-# --------------------------------------------------
+# ==================================================
 
 with st.expander(
     "Model information"
 ):
 
-    model_col1, model_col2 = st.columns(2)
+    model_col1, model_col2 = (
+        st.columns(2)
+    )
+
 
     model_col1.write(
         "**Classifier:** Random Forest"
@@ -484,6 +653,11 @@ with st.expander(
         f"`{metadata['feature_set']}`"
     )
 
+    model_col1.write(
+        "**Dataset:** RadioML 2016.10A"
+    )
+
+
     model_col2.write(
         "**Held-out test accuracy:** "
         f"{metadata['final_test']['accuracy']:.2%}"
@@ -495,5 +669,56 @@ with st.expander(
     )
 
     model_col2.write(
-        "**Accuracy at 18 dB:** 90.30%"
+        "**Mean accuracy for SNR ≥ 0 dB:** "
+        "85.35%"
+    )
+
+    model_col2.write(
+        "**Accuracy at 18 dB:** "
+        "90.30%"
+    )
+
+
+    st.divider()
+
+    st.write(
+        """
+        The final model uses 28 baseline handcrafted
+        signal features plus the physically motivated
+        `circular_moment_4` feature.
+
+        The model configuration and held-out test
+        evaluation were frozen before deployment.
+        """
+    )
+
+
+# ==================================================
+# Demo information
+# ==================================================
+
+with st.expander(
+    "About the public demo"
+):
+
+    st.write(
+        """
+        To keep the application lightweight, this demo
+        uses a small representative subset of RadioML
+        2016.10A rather than the complete dataset.
+
+        The public subset contains all 11 modulation
+        classes at four representative SNR levels:
+
+        - -10 dB
+        - 0 dB
+        - 10 dB
+        - 18 dB
+
+        Ten I/Q examples are included for each
+        modulation/SNR combination.
+
+        The classifier itself is the frozen final model
+        used for the reported project results.
+        """
     )
